@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Organización Jornada Fútbol Sala</title>
+<style>
+    body { font-family: 'Open Sans', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #333; }
+    header { background: #007bff; color: white; text-align: center; padding: 1rem; }
+    .tabs { display: flex; justify-content: center; background: #ddd; }
+    .tab { padding: 10px 20px; cursor: pointer; background: #ccc; margin: 2px; border-radius: 5px; }
+    .tab.active { background: #007bff; color: white; }
+    .tab-content { display: none; padding: 20px; }
+    .tab-content.active { display: block; }
+    input, button, select, textarea { padding: 8px; margin: 5px; border-radius: 5px; border: 1px solid #ccc; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+    th { background-color: #007bff; color: white; }
+    .btn { background-color: #007bff; color: white; border: none; cursor: pointer; }
+    .btn:hover { background-color: #0056b3; }
+    canvas { margin-top: 20px; }
+    .medalla { font-size: 20px; }
+    .panel-indice { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+    .panel-indice .btn-indice { padding:6px 10px; border-radius:4px; border:1px solid #888; background:#eee; cursor:pointer; }
+    .fila-seleccionada { outline: 2px solid #ff9800; }
+    .plantillas { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+    .tarjeta-equipo { border:1px solid #ccc; border-radius:8px; padding:10px; background:#fff; }
+    .tarjeta-equipo h4 { margin:6px 0; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<header>
+    <h1 id="tituloWeb">Organización Jornada Fútbol Sala</h1>
+    <input type="text" id="editarTitulo" placeholder="Editar título" oninput="cambiarTitulo()">
+    <button onclick="toggleDarkMode()" class="btn">Modo Oscuro</button>
+</header>
+<div class="tabs">
+    <div class="tab active" onclick="showTab('2A')">Grupo 2A</div>
+    <div class="tab" onclick="showTab('2B')">Grupo 2B</div>
+    <div class="tab" onclick="showTab('I2A')">Grupo I2A</div>
+    <div class="tab" onclick="showTab('I2B')">Grupo I2B</div>
+</div>
+
+<div id="2A" class="tab-content active"></div>
+<div id="2B" class="tab-content"></div>
+<div id="I2A" class="tab-content"></div>
+<div id="I2B" class="tab-content"></div>
+
+<script>
+const grupos = ['2A','2B','I2A','I2B'];
+let datos = {};
+let focoValores = {};
+
+window.onload = () => {
+    const tituloGuardado = localStorage.getItem('tituloWeb');
+    if(tituloGuardado){ document.getElementById('tituloWeb').innerText = tituloGuardado; document.getElementById('editarTitulo').value = tituloGuardado; }
+};
+
+function cambiarTitulo(){
+    const nuevoTitulo = document.getElementById('editarTitulo').value;
+    document.getElementById('tituloWeb').innerText = nuevoTitulo;
+    localStorage.setItem('tituloWeb', nuevoTitulo);
+}
+
+function toggleDarkMode(){ document.body.classList.toggle('dark-mode'); }
+
+function showTab(id){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    document.querySelector(`.tab[onclick="showTab('${id}')"]`).classList.add('active');
+    document.getElementById(id).classList.add('active');
+}
+
+function crearInterfazGrupo(grupo){
+    const div = document.getElementById(grupo);
+    div.innerHTML = `<h2>Grupo ${grupo}</h2>
+        <label>Número de equipos:</label>
+        <input type='number' id='num_${grupo}' min='2' max='20'>
+        <label>Número de enfrentamientos:</label>
+        <select id='enfrentamientos_${grupo}'>
+            <option value='1'>1</option>
+            <option value='2'>2</option>
+            <option value='3'>3</option>
+        </select>
+        <button class='btn' onclick="generarFormulario('${grupo}')">Generar</button>
+        <div id='equipos_${grupo}'></div>
+        <div id='plantillas_${grupo}' class='plantillas'></div>
+        <button class='btn' onclick="generarCalendario('${grupo}')">Generar Calendario</button>
+        <div id='calendario_${grupo}'></div>
+        <div class='panel-indice'>
+            <strong>Índice de puntos por valores (selecciona una fila y pulsa):</strong>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',-3)">-3</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',-2)">-2</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',-1)">-1</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',0)">0</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',1)">+1</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',2)">+2</button>
+            <button class='btn-indice' onclick="aplicarIndice('${grupo}',3)">+3</button>
+        </div>
+        <h3>Clasificación</h3>
+        <table id='tabla_${grupo}'><thead><tr><th>Puesto</th><th>Equipo</th><th>PJ</th><th>PG</th><th>PE</th><th>PP</th><th>GF</th><th>GC</th><th>Puntos</th><th>Medalla</th><th>Diploma</th></tr></thead><tbody></tbody></table>
+        <div id='menosGoleado_${grupo}'></div>
+        <canvas id='grafico_${grupo}' width='400' height='200'></canvas>
+        <button class='btn' onclick="guardarOnline('${grupo}')">Guardar Online</button>
+        <button class='btn' onclick="exportarExcel('${grupo}')">Exportar Excel</button>`;
+    datos[grupo] = {equipos:[],resultados:{},chart:null,analisis:{},plantillas:{}};
+}
+
+grupos.forEach(g=>crearInterfazGrupo(g));
+
+function generarFormulario(grupo){
+    const num = document.getElementById('num_'+grupo).value;
+    const container = document.getElementById('equipos_'+grupo);
+    const plantillasDiv = document.getElementById('plantillas_'+grupo);
+    container.innerHTML = '';
+    plantillasDiv.innerHTML = '';
+    datos[grupo].equipos = [];
+    datos[grupo].plantillas = {};
+    for(let i=1;i<=num;i++){
+        const input = document.createElement('input');
+        input.placeholder = 'Equipo '+i;
+        input.onchange = ()=>{ 
+            const nombre = input.value;
+            datos[grupo].equipos[i-1]=nombre; 
+            if(nombre && !datos[grupo].plantillas[nombre]) datos[grupo].plantillas[nombre] = Array(7).fill('');
+            renderPlantillas(grupo);
+            actualizarTabla(grupo); actualizarGrafico(grupo); 
+        };
+        container.appendChild(input);
+    }
+}
+
+function renderPlantillas(grupo){
+    const cont = document.getElementById('plantillas_'+grupo);
+    cont.innerHTML = '';
+    datos[grupo].equipos.forEach(eq => {
+        if(!eq) return;
+        const card = document.createElement('div');
+        card.className = 'tarjeta-equipo';
+        card.innerHTML = `<h4>${eq} — Jugadores (máx. 7)</h4>`;
+        const lista = document.createElement('div');
+        for(let j=0;j<7;j++){
+            const inp = document.createElement('input');
+            inp.placeholder = 'Jugador '+(j+1);
+            inp.value = (datos[grupo].plantillas[eq]||[])[j]||'';
+            inp.oninput = ()=>{
+                if(!datos[grupo].plantillas[eq]) datos[grupo].plantillas[eq] = Array(7).fill('');
+                datos[grupo].plantillas[eq][j] = inp.value;
+            };
+            lista.appendChild(inp);
+        }
+        card.appendChild(lista);
+        cont.appendChild(card);
+    });
+}
+
+function generarCalendario(grupo){
+    const div = document.getElementById('calendario_'+grupo);
+    div.innerHTML = '';
+    let html = '<table><tr><th>Partido</th><th>Hora</th><th>Resultado</th><th>Puntos Valores</th><th>Análisis del estadista</th></tr>';
+    const eqs = datos[grupo].equipos;
+    const enfrentamientos = parseInt(document.getElementById('enfrentamientos_'+grupo).value);
+    let idx = 0;
+    for(let r=0;r<enfrentamientos;r++){
+        for(let i=0;i<eqs.length;i++){
+            for(let j=i+1;j<eqs.length;j++){
+                const rowId = `${grupo}_m_${idx}`;
+                html += `<tr id='${rowId}' onclick="seleccionarFila('${grupo}','${rowId}')"><td>${eqs[i]} vs ${eqs[j]} (Ronda ${r+1})</td><td><input type='time'></td><td><input type='text' placeholder='Ej: 2-1' onchange="registrarResultado('${grupo}','${eqs[i]}','${eqs[j]}',this.value)"></td><td><input type='number' placeholder='Pts extra' onfocus="focoValores['${grupo}']=this" onchange="agregarPuntosDirecto('${grupo}','${eqs[i]}','${eqs[j]}',this.value)"></td><td><textarea placeholder='Nombre del estadista y reflexión' rows='2' onchange="guardarAnalisis('${grupo}',${idx},this.value)"></textarea></td></tr>`;
+                idx++;
+            }
+        }
+    }
+    html += '</table>';
+    div.innerHTML = html;
+}
+
+function seleccionarFila(grupo,rowId){
+    document.querySelectorAll(`#calendario_${grupo} tr`).forEach(tr=>tr.classList.remove('fila-seleccionada'));
+    const fila = document.getElementById(rowId);
+    if(fila){ fila.classList.add('fila-seleccionada'); }
+}
+
+function registrarResultado(grupo,eq1,eq2,res){
+    const partes = res.split('-');
+    if(partes.length!==2) return;
+    const g1 = parseInt(partes[0]);
+    const g2 = parseInt(partes[1]);
+    if(isNaN(g1) || isNaN(g2)) return;
+    if(!datos[grupo].resultados[eq1]) datos[grupo].resultados[eq1]={PJ:0,PG:0,PE:0,PP:0,Puntos:0,GF:0,GC:0};
+    if(!datos[grupo].resultados[eq2]) datos[grupo].resultados[eq2]={PJ:0,PG:0,PE:0,PP:0,Puntos:0,GF:0,GC:0};
+    datos[grupo].resultados[eq1].PJ++; datos[grupo].resultados[eq2].PJ++;
+    datos[grupo].resultados[eq1].GF += g1; datos[grupo].resultados[eq1].GC += g2;
+    datos[grupo].resultados[eq2].GF += g2; datos[grupo].resultados[eq2].GC += g1;
+    if(g1>g2){ datos[grupo].resultados[eq1].PG++; datos[grupo].resultados[eq1].Puntos+=3; datos[grupo].resultados[eq2].PP++; }
+    else if(g1<g2){ datos[grupo].resultados[eq2].PG++; datos[grupo].resultados[eq2].Puntos+=3; datos[grupo].resultados[eq1].PP++; }
+    else{ datos[grupo].resultados[eq1].PE++; datos[grupo].resultados[eq2].PE++; datos[grupo].resultados[eq1].Puntos++; datos[grupo].resultados[eq2].Puntos++; }
+    actualizarTabla(grupo); actualizarGrafico(grupo);
+}
+
+function agregarPuntosDirecto(grupo,eq1,eq2,puntos){
+    const extra = parseInt(puntos);
+    if(isNaN(extra)) return;
+    if(!datos[grupo].resultados[eq1]) datos[grupo].resultados[eq1]={PJ:0,PG:0,PE:0,PP:0,Puntos:0,GF:0,GC:0};
+    datos[grupo].resultados[eq1].Puntos += extra;
+    actualizarTabla(grupo); actualizarGrafico(grupo);
+}
+
+function aplicarIndice(grupo,valor){
+    const input = focoValores[grupo];
+    if(input){ input.value = valor; input.dispatchEvent(new Event('change')); }
+}
+
+function guardarAnalisis(grupo,idx,texto){
+    datos[grupo].analisis[idx] = texto;
+}
+
+function actualizarTabla(grupo){
+    const tbody=document.querySelector('#tabla_'+grupo+' tbody');
+    tbody.innerHTML='';
+    const ordenados = [...datos[grupo].equipos].sort((a,b)=>{
+        const pa = datos[grupo].resultados[a]?datos[grupo].resultados[a].Puntos:0;
+        const pb = datos[grupo].resultados[b]?datos[grupo].resultados[b].Puntos:0;
+        return pb - pa;
+    });
+    let menosEq = ''; let menosGC = Infinity;
+    ordenados.forEach((eq,index)=>{
+        const r=datos[grupo].resultados[eq]||{PJ:0,PG:0,PE:0,PP:0,Puntos:0,GF:0,GC:0};
+        if(typeof r.GC==='number' && r.GC < menosGC){ menosGC = r.GC; menosEq = eq; }
+        let medalla = '';
+        if(index===0) medalla='\uD83E\uDD47';
+        else if(index===1) medalla='\uD83E\uDD48';
+        else if(index===2) medalla='\uD83E\uDD49';
+        const diplomaBtn = `<button onclick=\"descargarDiploma('${grupo}','${eq}',${index+1})\">Diploma</button>`;
+        tbody.innerHTML+=`<tr><td>${index+1}</td><td>${eq}</td><td>${r.PJ}</td><td>${r.PG}</td><td>${r.PE}</td><td>${r.PP}</td><td>${r.GF}</td><td>${r.GC}</td><td>${r.Puntos}</td><td class='medalla'>${medalla}</td><td>${diplomaBtn}</td></tr>`;
+    });
+    const menosDiv = document.getElementById('menosGoleado_'+grupo);
+    menosDiv.textContent = menosEq ? `🏆 Equipo menos goleado: ${menosEq} (GC: ${menosGC})` : '';
+}
+
+function actualizarGrafico(grupo){
+    const ctx=document.getElementById('grafico_'+grupo).getContext('2d');
+    const ordenados = [...datos[grupo].equipos].sort((a,b)=>{
+        const pa = datos[grupo].resultados[a]?datos[grupo].resultados[a].Puntos:0;
+        const pb = datos[grupo].resultados[b]?datos[grupo].resultados[b].Puntos:0;
+        return pb - pa;
+    });
+    const puntos=ordenados.map(eq=>datos[grupo].resultados[eq]?datos[grupo].resultados[eq].Puntos:0);
+    if(datos[grupo].chart) datos[grupo].chart.destroy();
+    datos[grupo].chart=new Chart(ctx,{type:'bar',data:{labels:ordenados,datasets:[{label:'Puntos',data:puntos,backgroundColor:'rgba(0,123,255,0.6)'}]},options:{responsive:true,scales:{y:{beginAtZero:true}}}});
+}
+
+function guardarOnline(grupo){
+    const payload={grupo:grupo,equipos:datos[grupo].equipos,resultados:datos[grupo].resultados,analisis:datos[grupo].analisis,plantillas:datos[grupo].plantillas};
+    fetch('https://api.ejemplo.com/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(r=>alert('Datos del grupo '+grupo+' guardados online (simulado)'))
+    .catch(()=>alert('Error al guardar online'));
+    localStorage.setItem('grupo_'+grupo,JSON.stringify(payload));
+}
+
+function exportarExcel(grupo){
+    const tabla = document.getElementById('tabla_'+grupo);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabla);
+    XLSX.utils.book_append_sheet(wb, ws, 'Clasificación '+grupo);
+    XLSX.writeFile(wb, 'clasificacion_'+grupo+'.xlsx');
+}
+
+function descargarDiploma(grupo,equipo,puesto){
+    const ventana = window.open('', '', 'width=800,height=600');
+    ventana.document.write(`<html><head><title>Diploma</title></head><body style='text-align:center;font-family:Arial;'>
+        <h1>Diploma de Participación</h1>
+        <p>Se otorga a <strong>${equipo}</strong> por su participación en el grupo ${grupo}</p>
+        <p>Puesto: ${puesto}</p>
+        <p>¡Felicidades por demostrar valores deportivos!</p>
+    </body></html>`);
+    ventana.document.close();
+    ventana.print();
+}
+</script>
+</body>
+</html>
