@@ -19,3 +19,4 @@ Este proyecto es una aplicación web interactiva en HTML, CSS y JavaScript dise�
 
 ## Uso
 Abre el archivo HTML en tu navegador y sigue los pasos de configuración para cada grupo.
+https://alejandrabeldeb.github.io/futbol2ESO/
